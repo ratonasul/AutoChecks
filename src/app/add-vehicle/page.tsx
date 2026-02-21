@@ -1,0 +1,116 @@
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { db } from '@/lib/db';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ArrowLeft, Car } from 'lucide-react';
+import { theme } from '@/lib/theme';
+import { toast } from 'sonner';
+
+export default function AddVehicle() {
+  const [plate, setPlate] = useState('');
+  const [vin, setVin] = useState('');
+  const [notes, setNotes] = useState('');
+  const router = useRouter();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!plate.trim()) return;
+
+    await db.vehicles.add({
+      plate: plate.trim(),
+      vin: vin.trim() || undefined,
+      notes: notes.trim() || undefined,
+      createdAt: Date.now(),
+    });
+
+    toast('Vehicle added successfully');
+    router.push('/');
+  };
+
+  return (
+    <div className="min-h-screen bg-background">
+      <main className="container max-w-2xl mx-auto px-4 py-6 pb-24">
+        <div className="flex items-center gap-4 mb-6">
+          <Button variant="ghost" size="sm" onClick={() => router.back()}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <h1 className="text-2xl font-bold">Add Vehicle</h1>
+        </div>
+
+        <Card className={`${theme.borderRadius.card} ${theme.shadows.card}`}>
+          <CardHeader className="text-center pb-6">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+              <Car className="h-8 w-8 text-primary" />
+            </div>
+            <CardTitle className="text-xl">Vehicle Details</CardTitle>
+            <p className={`text-sm ${theme.colors.textMuted} mt-2`}>
+              Enter your vehicle information to start tracking expiries
+            </p>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">License Plate *</label>
+                <Input
+                  value={plate}
+                  onChange={(e) => setPlate(e.target.value)}
+                  placeholder="e.g. AB-12-XYZ"
+                  className={`${theme.borderRadius.input}`}
+                  required
+                />
+                <p className={`text-xs ${theme.colors.textMuted}`}>
+                  Required field for vehicle identification
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">VIN (Vehicle Identification Number)</label>
+                <Input
+                  value={vin}
+                  onChange={(e) => setVin(e.target.value)}
+                  placeholder="17-character VIN (optional)"
+                  className={`${theme.borderRadius.input}`}
+                />
+                <p className={`text-xs ${theme.colors.textMuted}`}>
+                  Helps with more accurate checks
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Notes</label>
+                <Textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Additional notes about the vehicle..."
+                  className={`${theme.borderRadius.input} min-h-[80px]`}
+                />
+                <p className={`text-xs ${theme.colors.textMuted}`}>
+                  Optional notes for reference
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => router.back()}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" className="flex-1" disabled={!plate.trim()}>
+                  Add Vehicle
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      </main>
+    </div>
+  );
+}
