@@ -65,8 +65,6 @@ npm run build
 
 ## Notification Limitations
 
-- **Android**: Background notifications are supported if permission is granted
-- **iOS**: Due to iOS restrictions, notifications only work when the app is open. No background scheduled notifications are possible.
 
 The app provides in-app reminders when opened, showing upcoming expiries within 30 days.
 
@@ -87,3 +85,24 @@ Use the "Export Data" button to download your vehicles and check history as JSON
 ## License
 
 MIT
+
+## Web Push / Notifications
+
+This project includes a basic service worker and server route to test Web Push notifications.
+
+Steps to enable and test:
+
+- Generate VAPID keys (run once locally):
+
+```powershell
+# install web-push globally or use npx
+npx web-push generate-vapid-keys --json
+```
+
+Copy the `publicKey` and `privateKey` into your deployment environment variables as `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`. Also set `VAPID_SUBJECT` to a contact (e.g., `mailto:you@example.com`). For the client, set `NEXT_PUBLIC_VAPID_PUBLIC` to the public key so the browser can subscribe.
+
+How it works:
+- `public/sw.js` handles incoming `push` events and shows notifications.
+- `src/components/PushManager.tsx` registers the service worker, requests notification permission, subscribes via PushManager, and POSTs the subscription to `/api/push/subscribe` which triggers a test push.
+
+After setting environment variables, push your code and deploy. Then open the site, click "Enable Push & Test" in the UI to register and receive a test notification.
