@@ -1,5 +1,6 @@
 import { db } from '@/lib/db';
 import * as XLSX from 'xlsx';
+import { canonicalPlate, normalizePlate, normalizeVin } from '@/utils/validation';
 
 export async function importExcel(file: File): Promise<{ success: boolean; message: string }> {
   try {
@@ -14,16 +15,24 @@ export async function importExcel(file: File): Promise<{ success: boolean; messa
     }
 
     // Validate and prepare
-    const existingPlates = new Set((await db.vehicles.toArray()).map(v => v.plate));
+    const existingPlates = new Set((await db.vehicles.toArray()).map(v => canonicalPlate(v.plate)));
+    const seenInFile = new Set<string>();
     const newVehicles = (vehiclesJson as any[]).map(v => ({
-      plate: v.plate,
-      vin: v.vin || undefined,
+      plate: normalizePlate(String(v.plate || '')),
+      vin: normalizeVin(String(v.vin || '')) || undefined,
       notes: v.notes || undefined,
       itpExpiryMillis: v.itpExpiryMillis || null,
       rcaExpiryMillis: v.rcaExpiryMillis || null,
       vignetteExpiryMillis: v.vignetteExpiryMillis || null,
       createdAt: v.createdAt || Date.now(),
-    })).filter(v => v.plate && !existingPlates.has(v.plate));
+      deletedAt: null,
+    })).filter(v => {
+      const key = canonicalPlate(v.plate);
+      if (!key) return false;
+      if (existingPlates.has(key) || seenInFile.has(key)) return false;
+      seenInFile.add(key);
+      return true;
+    });
 
     if (newVehicles.length === 0) {
       return { success: false, message: 'No new vehicles to import (all plates already exist)' };

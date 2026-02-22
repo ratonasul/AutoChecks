@@ -1,4 +1,5 @@
-import { db, Vehicle, Check } from '@/lib/db';
+import { db } from '@/lib/db';
+import { canonicalPlate, normalizePlate, normalizeVin } from '@/utils/validation';
 
 export async function importData(file: File): Promise<{ success: boolean; message: string }> {
   try {
@@ -17,8 +18,25 @@ export async function importData(file: File): Promise<{ success: boolean; messag
     }
 
     // Check for duplicate plates
-    const existingPlates = new Set((await db.vehicles.toArray()).map(v => v.plate));
-    const newVehicles = data.vehicles.filter((v: any) => !existingPlates.has(v.plate));
+    const existingPlates = new Set(
+      (await db.vehicles.toArray()).map((v) => canonicalPlate(v.plate))
+    );
+    const seenInFile = new Set<string>();
+    const newVehicles = data.vehicles
+      .map((v: any) => ({
+        ...v,
+        plate: normalizePlate(String(v.plate || '')),
+        vin: normalizeVin(String(v.vin || '')) || undefined,
+        deletedAt: null,
+        createdAt: v.createdAt || Date.now(),
+      }))
+      .filter((v: any) => {
+        const key = canonicalPlate(v.plate);
+        if (!key) return false;
+        if (existingPlates.has(key) || seenInFile.has(key)) return false;
+        seenInFile.add(key);
+        return true;
+      });
 
     if (newVehicles.length === 0) {
       return { success: false, message: 'No new vehicles to import (all plates already exist)' };

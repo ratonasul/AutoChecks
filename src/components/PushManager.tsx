@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { scheduleRuntimeExpiryReminders } from "@/services/reminders/runtimeReminderScheduler";
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -170,6 +171,43 @@ export default function PushManager() {
     }
   }
 
+  async function scheduleLogicTest() {
+    if (!isPushAvailable || !navigator.serviceWorker) {
+      setStatus("unsupported");
+      return;
+    }
+
+    try {
+      setStatus("scheduling-test");
+      const fireAt = new Date(Date.now() + 60_000);
+      const ids = await scheduleRuntimeExpiryReminders({
+        // leadDays 0 means trigger on the same calendar day at notifyHour:notifyMinute.
+        expiryMillis: fireAt.getTime(),
+        notificationIdPrefix: "manual-reminder-test",
+        settings: {
+          leadDays: [0],
+          notifyHour: fireAt.getHours(),
+          notifyMinute: fireAt.getMinutes(),
+        },
+        onScheduled: (_id, triggerAtMillis) => {
+          const triggerAt = new Date(triggerAtMillis).toLocaleTimeString();
+          toast(`Reminder logic test scheduled for ${triggerAt}`);
+        },
+      });
+
+      if (ids.length === 0) {
+        setStatus("no-future-reminders");
+        toast("No future trigger time found; try again at the start of the next minute.");
+        return;
+      }
+
+      setStatus("test-scheduled");
+    } catch (err) {
+      console.error(err);
+      setStatus("error");
+    }
+  }
+
   function sendTestWithDelay() {
     if (countdown !== null) return;
 
@@ -202,14 +240,20 @@ export default function PushManager() {
         <div className="text-sm">Not subscribed</div>
       )}
 
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         {!subscription && (
-          <Button type="button" onClick={subscribe} disabled={!isPushAvailable}>
+          <Button type="button" onClick={subscribe} disabled={!isPushAvailable} className="w-full sm:w-auto">
             Subscribe
           </Button>
         )}
         {subscription && (
-          <Button type="button" variant="outline" onClick={unsubscribe} disabled={!isPushAvailable}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={unsubscribe}
+            disabled={!isPushAvailable}
+            className="w-full sm:w-auto"
+          >
             Unsubscribe
           </Button>
         )}
@@ -218,8 +262,18 @@ export default function PushManager() {
           variant="secondary"
           onClick={sendTestWithDelay}
           disabled={!isPushAvailable || !subscription || countdown !== null}
+          className="w-full sm:w-auto"
         >
           {countdown !== null ? `Sending in ${countdown}s...` : 'Notification Test (5s)'}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={scheduleLogicTest}
+          disabled={!isPushAvailable || !subscription}
+          className="w-full sm:w-auto"
+        >
+          Reminder Logic Test (~1m)
         </Button>
       </div>
       {!isPushAvailable && (

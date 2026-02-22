@@ -60,6 +60,9 @@ export function GreetingScreen({ username, onDismiss }: GreetingScreenProps) {
           <p className="text-2xl text-slate-300">{username}</p>
         </motion.div>
       </div>
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-xs text-slate-400 tracking-wide">
+        Powered by UCENICUL
+      </div>
     </motion.div>
   );
 }

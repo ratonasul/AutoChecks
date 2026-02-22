@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { db } from '@/lib/db';
 import { Button } from '@/components/ui/button';
@@ -11,31 +11,91 @@ import { ArrowLeft, Car } from 'lucide-react';
 import { theme } from '@/lib/theme';
 import { toast } from 'sonner';
 import PushManager from '@/components/PushManager';
+import { canonicalPlate, normalizePlate, normalizeVin, validatePlate, validateVin } from '@/utils/validation';
+import { hapticSuccess } from '@/utils/haptics';
 
 export default function AddVehicle() {
   const [plate, setPlate] = useState('');
   const [vin, setVin] = useState('');
   const [notes, setNotes] = useState('');
+  const [fromFab, setFromFab] = useState(false);
+  const [animateIn, setAnimateIn] = useState(false);
+  const [animationReady, setAnimationReady] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    const shouldAnimateFromFab = sessionStorage.getItem('animateAddVehicleFromFab') === '1';
+    if (shouldAnimateFromFab) {
+      sessionStorage.removeItem('animateAddVehicleFromFab');
+      setFromFab(true);
+    }
+
+    setAnimationReady(true);
+    const id = requestAnimationFrame(() => setAnimateIn(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!plate.trim()) return;
+    const normalizedPlate = normalizePlate(plate);
+    const normalizedVin = normalizeVin(vin);
+
+    const plateError = validatePlate(normalizedPlate);
+    if (plateError) {
+      toast.error(plateError);
+      return;
+    }
+
+    const vinError = validateVin(normalizedVin);
+    if (vinError) {
+      toast.error(vinError);
+      return;
+    }
+
+    const existingVehicles = await db.vehicles.toArray();
+    const plateCollision = existingVehicles.some(
+      (vehicle) => canonicalPlate(vehicle.plate) === canonicalPlate(normalizedPlate)
+    );
+    if (plateCollision) {
+      toast.error('A vehicle with this license plate already exists.');
+      return;
+    }
+
+    if (normalizedVin) {
+      const vinCollision = existingVehicles.some(
+        (vehicle) => normalizeVin(vehicle.vin || '') === normalizedVin
+      );
+      if (vinCollision) {
+        toast.error('A vehicle with this VIN already exists.');
+        return;
+      }
+    }
 
     await db.vehicles.add({
-      plate: plate.trim(),
-      vin: vin.trim() || undefined,
+      plate: normalizedPlate,
+      vin: normalizedVin || undefined,
       notes: notes.trim() || undefined,
       createdAt: Date.now(),
+      deletedAt: null,
     });
 
     toast('Vehicle added successfully');
+    hapticSuccess();
     router.push('/');
   };
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="container max-w-2xl mx-auto px-4 py-6 pb-24">
+      <div
+        className={`transition-all duration-200 ease-out ${
+          !animationReady
+            ? 'opacity-0'
+            : fromFab && !animateIn
+              ? 'translate-x-14 opacity-0'
+              : 'translate-x-0 opacity-100'
+        }`}
+      >
+        <main className="container max-w-2xl mx-auto px-4 py-6 pb-24">
         <div className="flex items-center gap-4 mb-6">
           <Button variant="ghost" size="sm" onClick={() => router.back()}>
             <ArrowLeft className="h-4 w-4" />
@@ -123,7 +183,8 @@ export default function AddVehicle() {
             <PushManager />
           </CardContent>
         </Card>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

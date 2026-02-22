@@ -1,16 +1,22 @@
 "use client";
 
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Vehicle } from '@/lib/db'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { ChevronDown, ChevronUp, CheckCircle, AlertTriangle, XCircle } from 'lucide-react'
+import { ChevronDown, ChevronUp, CheckCircle, AlertTriangle, XCircle, Pencil, Trash2, RefreshCw } from 'lucide-react'
 import { AssistedCheckModal } from '@/components/AssistedCheckModal'
 import { AssistedCheckService } from '@/services/check/AssistedCheckService'
 import { calculateReminderState } from '@/services/reminders/reminderEngine'
+import { scheduleRuntimeExpiryReminders } from '@/services/reminders/runtimeReminderScheduler'
 import { theme } from '@/lib/theme'
 import { toast } from 'sonner'
+import { db } from '@/lib/db'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { canonicalPlate, normalizePlate, normalizeVin, validatePlate, validateVin } from '@/utils/validation'
 
 interface VehicleCardProps {
   vehicle: Vehicle
@@ -21,6 +27,16 @@ export function VehicleCard({ vehicle, onCheckSave }: VehicleCardProps) {
   const [expanded, setExpanded] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [checkType, setCheckType] = useState<'ITP' | 'RCA' | 'VIGNETTE' | null>(null)
+  const [editOpen, setEditOpen] = useState(false)
+  const [editPlate, setEditPlate] = useState(vehicle.plate)
+  const [editVin, setEditVin] = useState(vehicle.vin || '')
+  const [editNotes, setEditNotes] = useState(vehicle.notes || '')
+
+  useEffect(() => {
+    setEditPlate(vehicle.plate)
+    setEditVin(vehicle.vin || '')
+    setEditNotes(vehicle.notes || '')
+  }, [vehicle])
 
   const getOverallStatus = () => {
     const itp = calculateReminderState(vehicle.itpExpiryMillis ?? null)
@@ -72,9 +88,74 @@ export function VehicleCard({ vehicle, onCheckSave }: VehicleCardProps) {
     setModalOpen(true)
   }
 
+  const handleDelete = async () => {
+    if (!vehicle.id) return
+    if (!confirm(`Delete vehicle ${vehicle.plate}?`)) return
+
+    await db.vehicles.update(vehicle.id, { deletedAt: Date.now() })
+    toast('Vehicle moved to recycle bin')
+    onCheckSave()
+  }
+
+  const handleEditSave = async () => {
+    if (!vehicle.id) return
+
+    const normalizedPlate = normalizePlate(editPlate)
+    const normalizedVin = normalizeVin(editVin)
+    const plateError = validatePlate(normalizedPlate)
+    if (plateError) {
+      toast.error(plateError)
+      return
+    }
+    const vinError = validateVin(normalizedVin)
+    if (vinError) {
+      toast.error(vinError)
+      return
+    }
+
+    const vehicles = await db.vehicles.toArray()
+    const duplicatePlate = vehicles.some(
+      (item) => item.id !== vehicle.id && canonicalPlate(item.plate) === canonicalPlate(normalizedPlate)
+    )
+    if (duplicatePlate) {
+      toast.error('Another vehicle already uses this license plate.')
+      return
+    }
+
+    if (normalizedVin) {
+      const duplicateVin = vehicles.some(
+        (item) => item.id !== vehicle.id && normalizeVin(item.vin || '') === normalizedVin
+      )
+      if (duplicateVin) {
+        toast.error('Another vehicle already uses this VIN.')
+        return
+      }
+    }
+
+    await db.vehicles.update(vehicle.id, {
+      plate: normalizedPlate,
+      vin: normalizedVin || undefined,
+      notes: editNotes.trim() || undefined,
+    })
+    setEditOpen(false)
+    toast('Vehicle updated')
+    onCheckSave()
+  }
+
   const handleSave = async (result: any) => {
     const service = new AssistedCheckService()
     await service.saveCheckResult(result)
+
+    const notificationIdPrefix = `vehicle-${result.vehicleId}-${String(result.type).toLowerCase()}`
+    const scheduledIds = await scheduleRuntimeExpiryReminders({
+      expiryMillis: result.expiryMillis,
+      notificationIdPrefix,
+    })
+
+    if (scheduledIds.length > 0) {
+      toast(`${scheduledIds.length} reminder(s) scheduled`)
+    }
+
     onCheckSave()
     toast('Check saved successfully')
   }
@@ -132,7 +213,12 @@ export function VehicleCard({ vehicle, onCheckSave }: VehicleCardProps) {
                                 {status.date ? new Date(status.date).toLocaleDateString() : 'Not set'}
                               </div>
                             </div>
-                            <div className="text-xs font-semibold">{status.text}</div>
+                            <div className="flex items-center gap-2">
+                              <div className="text-xs font-semibold">{status.text}</div>
+                              <Button size="sm" variant="outline" onClick={() => handleCheck('ITP')}>
+                                <RefreshCw className="h-3 w-3" />
+                              </Button>
+                            </div>
                           </div>
                         </motion.div>
                       )
@@ -155,7 +241,12 @@ export function VehicleCard({ vehicle, onCheckSave }: VehicleCardProps) {
                                 {status.date ? new Date(status.date).toLocaleDateString() : 'Not set'}
                               </div>
                             </div>
-                            <div className="text-xs font-semibold">{status.text}</div>
+                            <div className="flex items-center gap-2">
+                              <div className="text-xs font-semibold">{status.text}</div>
+                              <Button size="sm" variant="outline" onClick={() => handleCheck('RCA')}>
+                                <RefreshCw className="h-3 w-3" />
+                              </Button>
+                            </div>
                           </div>
                         </motion.div>
                       )
@@ -178,7 +269,12 @@ export function VehicleCard({ vehicle, onCheckSave }: VehicleCardProps) {
                                 {status.date ? new Date(status.date).toLocaleDateString() : 'Not set'}
                               </div>
                             </div>
-                            <div className="text-xs font-semibold">{status.text}</div>
+                            <div className="flex items-center gap-2">
+                              <div className="text-xs font-semibold">{status.text}</div>
+                              <Button size="sm" variant="outline" onClick={() => handleCheck('VIGNETTE')}>
+                                <RefreshCw className="h-3 w-3" />
+                              </Button>
+                            </div>
                           </div>
                         </motion.div>
                       )
@@ -199,6 +295,16 @@ export function VehicleCard({ vehicle, onCheckSave }: VehicleCardProps) {
                       <span className="truncate">Check Vignette</span>
                     </Button>
                   </div>
+                  <div className="grid grid-cols-2 gap-2 pt-2">
+                    <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
+                      <Pencil className="mr-2 h-4 w-4" />
+                      Edit
+                    </Button>
+                    <Button size="sm" variant="destructive" onClick={handleDelete}>
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete
+                    </Button>
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -209,6 +315,35 @@ export function VehicleCard({ vehicle, onCheckSave }: VehicleCardProps) {
       {checkType && (
         <AssistedCheckModal vehicle={vehicle} checkType={checkType} open={modalOpen} onOpenChange={setModalOpen} onSave={handleSave} />
       )}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Vehicle</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-sm font-medium">License Plate</label>
+              <Input value={editPlate} onChange={(e) => setEditPlate(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-sm font-medium">VIN</label>
+              <Input value={editVin} onChange={(e) => setEditVin(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Notes</label>
+              <Textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} />
+            </div>
+            <div className="flex gap-2">
+              <Button className="flex-1" onClick={handleEditSave}>
+                Save
+              </Button>
+              <Button className="flex-1" variant="outline" onClick={() => setEditOpen(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

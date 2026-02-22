@@ -1,5 +1,6 @@
 import { db } from '@/lib/db';
 import * as XLSX from 'xlsx';
+import { getCompanyDisplayName, getSettings, upsertSettings } from '@/lib/settings';
 
 // Helper: convert JS Date to Excel serial number
 function datenum(v: Date) {
@@ -8,10 +9,22 @@ function datenum(v: Date) {
 }
 
 export async function exportExcel(): Promise<void> {
-  const vehicles = await db.vehicles.toArray();
+  const vehicles = (await db.vehicles.toArray()).filter((vehicle) => !vehicle.deletedAt);
   const checks = await db.checks.toArray();
+  const settings = await getSettings();
+  const companyName = getCompanyDisplayName(settings);
 
   const wb = XLSX.utils.book_new();
+
+  const metaRows = [
+    { key: 'Company Name', value: companyName },
+    { key: 'Contact', value: settings.companyContact || '' },
+    { key: 'Timezone', value: settings.companyTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone },
+    { key: 'Exported At', value: new Date().toISOString() },
+  ];
+  const wsMeta = XLSX.utils.json_to_sheet(metaRows);
+  wsMeta['!cols'] = [{ wpx: 140 }, { wpx: 260 }];
+  XLSX.utils.book_append_sheet(wb, wsMeta, 'Company');
 
   // Prepare vehicle rows with proper date serials
   const vehiclesRows = vehicles.map(v => ({
@@ -75,6 +88,7 @@ export async function exportExcel(): Promise<void> {
   wsChecks['!cols'] = [ { wpx: 50 }, { wpx: 80 }, { wpx: 80 }, { wpx: 80 }, { wpx: 110 }, { wpx: 110 } ];
   XLSX.utils.book_append_sheet(wb, wsChecks, 'Checks');
 
-  const fileName = `autochecks-data-${new Date().toISOString().split('T')[0]}.xlsx`;
+  const fileName = `${companyName.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'autochecks'}-data-${new Date().toISOString().split('T')[0]}.xlsx`;
   XLSX.writeFile(wb, fileName);
+  await upsertSettings({ lastExportAt: Date.now() });
 }
