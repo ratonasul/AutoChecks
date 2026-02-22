@@ -1,6 +1,8 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -15,11 +17,35 @@ function urlBase64ToUint8Array(base64String: string) {
 
 export default function PushManager() {
   const [status, setStatus] = useState<string>("idle");
-  const [subscription, setSubscription] = useState<any | null>(null);
+  const [subscription, setSubscription] = useState<PushSubscription | null>(null);
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [isPushAvailable, setIsPushAvailable] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function clearTimers() {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    setCountdown(null);
+  }
 
   useEffect(() => {
     (async () => {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      const pushSupported =
+        typeof window !== "undefined" &&
+        window.isSecureContext &&
+        "serviceWorker" in navigator &&
+        "PushManager" in window;
+
+      setIsPushAvailable(pushSupported);
+
+      if (!pushSupported) {
         setStatus('unsupported');
         return;
       }
@@ -36,9 +62,19 @@ export default function PushManager() {
         console.error(err);
       }
     })();
+
+    return () => {
+      clearTimers();
+    };
   }, []);
 
   async function subscribe() {
+    if (!isPushAvailable || !navigator.serviceWorker) {
+      setStatus("unsupported");
+      toast("Push notifications are not supported in this browser/context.");
+      return;
+    }
+
     try {
       setStatus('registering-sw');
       const reg = await navigator.serviceWorker.register('/sw.js');
@@ -72,6 +108,11 @@ export default function PushManager() {
   }
 
   async function unsubscribe() {
+    if (!isPushAvailable || !navigator.serviceWorker) {
+      setStatus("unsupported");
+      return;
+    }
+
     try {
       setStatus('unsubscribing');
       const reg = await navigator.serviceWorker.getRegistration();
@@ -101,6 +142,11 @@ export default function PushManager() {
   }
 
   async function sendTest() {
+    if (!isPushAvailable || !navigator.serviceWorker) {
+      setStatus("unsupported");
+      return;
+    }
+
     try {
       setStatus('sending-test');
       const reg = await navigator.serviceWorker.getRegistration();
@@ -117,33 +163,73 @@ export default function PushManager() {
       });
 
       setStatus('test-sent');
+      toast('Test push sent');
     } catch (err) {
       console.error(err);
       setStatus('error');
     }
   }
 
+  function sendTestWithDelay() {
+    if (countdown !== null) return;
+
+    setStatus('test-scheduled');
+    setCountdown(5);
+
+    let remaining = 5;
+    intervalRef.current = setInterval(() => {
+      remaining -= 1;
+      if (remaining > 0) {
+        setCountdown(remaining);
+      }
+    }, 1000);
+
+    timeoutRef.current = setTimeout(async () => {
+      clearTimers();
+      await sendTest();
+    }, 5000);
+  }
+
   return (
-    <div className="push-manager">
-      <div className="mb-2">Push status: <strong>{status}</strong></div>
+    <div className="push-manager space-y-3">
+      <div className="text-sm">Push status: <strong>{status}</strong></div>
       {subscription ? (
-        <div className="mb-2">
+        <div>
           <div className="text-sm">Subscribed</div>
           <div className="truncate text-xs">{(subscription.endpoint || subscription.toJSON?.().endpoint)?.slice(0, 80)}</div>
         </div>
       ) : (
-        <div className="mb-2 text-sm">Not subscribed</div>
+        <div className="text-sm">Not subscribed</div>
       )}
 
       <div className="flex gap-2">
         {!subscription && (
-          <button onClick={subscribe} className="btn btn-primary">Subscribe</button>
+          <Button type="button" onClick={subscribe} disabled={!isPushAvailable}>
+            Subscribe
+          </Button>
         )}
         {subscription && (
-          <button onClick={unsubscribe} className="btn">Unsubscribe</button>
+          <Button type="button" variant="outline" onClick={unsubscribe} disabled={!isPushAvailable}>
+            Unsubscribe
+          </Button>
         )}
-        <button onClick={sendTest} className="btn">Send Test</button>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={sendTestWithDelay}
+          disabled={!isPushAvailable || !subscription || countdown !== null}
+        >
+          {countdown !== null ? `Sending in ${countdown}s...` : 'Notification Test (5s)'}
+        </Button>
       </div>
+      {!isPushAvailable && (
+        <p className="text-xs text-destructive">
+          Push requires HTTPS (or localhost) and a browser with Service Worker support.
+        </p>
+      )}
+      <p className="text-xs text-muted-foreground">
+        Tap test, lock your phone within 5 seconds, and wait for the notification.
+      </p>
     </div>
   );
 }

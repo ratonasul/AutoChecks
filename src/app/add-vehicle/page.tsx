@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowLeft, Car } from 'lucide-react';
 import { theme } from '@/lib/theme';
 import { toast } from 'sonner';
+import PushManager from '@/components/PushManager';
 
 export default function AddVehicle() {
   const [plate, setPlate] = useState('');
@@ -108,6 +109,18 @@ export default function AddVehicle() {
                 </Button>
               </div>
             </form>
+          </CardContent>
+        </Card>
+
+        <Card className={`${theme.borderRadius.card} ${theme.shadows.card} mt-6`}>
+          <CardHeader>
+            <CardTitle className="text-lg">Push Notification Test</CardTitle>
+            <p className={`text-sm ${theme.colors.textMuted}`}>
+              Schedule a test push in 5 seconds so you can lock the phone and verify delivery.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <PushManager />
           </CardContent>
         </Card>
       </main>
