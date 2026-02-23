@@ -10,6 +10,7 @@ A Progressive Web App for tracking vehicle expiry dates (ITP, RCA, Vignette) wit
 - Check history storage
 - Upcoming reminders (in-app notifications)
 - Export data as JSON
+- Optional Supabase login + cloud backup sync
 - Dark theme
 - Installable as PWA on Android and iOS
 
@@ -81,6 +82,52 @@ Since PWAs cannot reliably scrape government websites due to CORS and CAPTCHA:
 ## Data Export
 
 Use the "Export Data" button to download your vehicles and check history as JSON.
+
+## Cloud Login and Sync (Supabase)
+
+This project now includes optional account login and snapshot sync to Supabase.
+
+### Required environment variables
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+```
+
+### SQL setup (run in Supabase SQL editor)
+
+```sql
+create table if not exists public.user_snapshots (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  payload jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.user_snapshots enable row level security;
+
+create policy "users_manage_own_snapshot"
+on public.user_snapshots
+for all
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+```
+
+### Behavior
+
+- Login/signup is shown first on app open when no active session exists.
+- After sign in, a greeting screen is shown and then auto-sync runs.
+- `Sync Now` uses a simple rule:
+  - if cloud snapshot is newer than local `cloudLastSyncedAt`, pull cloud to local
+  - otherwise push local snapshot to cloud
+- `Upload Local` and `Download Cloud` let you force direction explicitly.
+
+### Supabase security hardening (recommended)
+
+- Authentication -> Settings: enable leaked password protection / breached password checks.
+- Configure password policy in Supabase and keep a client-side policy (this app enforces 10+ chars, mixed character types on signup).
+- Enable MFA (TOTP/SMS) for high-risk users and privileged roles.
+- Monitor auth logs for repeated failed attempts and configure rate limits/anomaly detection.
+- Keep only publishable/anon key in client env; never expose secret/service role keys in frontend code.
 
 ## License
 

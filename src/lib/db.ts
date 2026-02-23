@@ -37,6 +37,9 @@ export interface Settings {
   reminderNotifyHour?: number;
   reminderNotifyMinute?: number;
   featureFlags?: Partial<FeatureFlags>;
+  cloudUserEmail?: string;
+  cloudLastSyncedAt?: number;
+  cloudAutoSync?: boolean;
 }
 
 export class AutoChecksDB extends Dexie {
@@ -75,6 +78,20 @@ export class AutoChecksDB extends Dexie {
         await vehiclesTable.toCollection().modify((vehicle) => {
           if (typeof vehicle.deletedAt === 'undefined') {
             vehicle.deletedAt = null;
+          }
+        });
+      });
+    this.version(4)
+      .stores({
+        vehicles: '++id, plate, vin, deletedAt, itpExpiryMillis, rcaExpiryMillis, vignetteExpiryMillis, createdAt',
+        checks: '++id, vehicleId, type, status, expiryMillis, checkedAt, note, sourceUrl',
+        settings: '++id',
+      })
+      .upgrade(async (tx) => {
+        const settingsTable = tx.table<Settings>('settings');
+        await settingsTable.toCollection().modify((settings) => {
+          if (typeof settings.cloudAutoSync === 'undefined') {
+            settings.cloudAutoSync = false;
           }
         });
       });

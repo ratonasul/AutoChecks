@@ -9,7 +9,6 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { VehicleCard } from '@/components/VehicleCard';
 import { theme } from '@/lib/theme';
-import { GreetingScreen } from '@/components/GreetingScreen';
 import { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { calculateReminderState } from '@/services/reminders/reminderEngine';
@@ -32,8 +31,6 @@ export default function Home() {
     () => db.vehicles.toArray().then((items) => items.filter((vehicle) => !vehicle.deletedAt)),
     []
   );
-  const [showGreeting, setShowGreeting] = useState(false);
-  const [username, setUsername] = useState('Guest');
   const [isFabNavigating, setIsFabNavigating] = useState(false);
   const [search, setSearch] = useState('');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
@@ -68,29 +65,6 @@ export default function Home() {
       })
     );
   }, [search, filterMode, sortMode]);
-
-  useEffect(() => {
-    const loadGreeting = async () => {
-      try {
-        const hasShownGreeting = sessionStorage.getItem('greetingShown');
-        if (!hasShownGreeting) {
-          const settings = await db.settings.toArray();
-          if (settings.length > 0 && settings[0].username) {
-            setUsername(settings[0].username);
-          }
-          setShowGreeting(true);
-          sessionStorage.setItem('greetingShown', 'true');
-        }
-      } catch (error) {
-        console.error('Failed to load greeting:', error);
-      }
-    };
-    loadGreeting();
-  }, []);
-
-  const handleGreetingDismiss = () => {
-    setShowGreeting(false);
-  };
 
   const handleAddVehicleFromFab = () => {
     if (isFabNavigating) return;
@@ -148,7 +122,6 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-background">
-      {showGreeting && <GreetingScreen username={username} onDismiss={handleGreetingDismiss} />}
       <main className="container max-w-2xl mx-auto px-4 py-6 pb-24">
         <Card className={`mb-4 ${theme.borderRadius.card} ${theme.shadows.card}`}>
           <CardContent className="space-y-3 p-3">

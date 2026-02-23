@@ -28,6 +28,7 @@ import { defaultFeatureFlags } from '@/lib/featureFlags';
 import { getCompanyDisplayName, getSettings, upsertSettings } from '@/lib/settings';
 import { flushQueuedRequests, getQueuedRequestCount } from '@/lib/networkQueue';
 import { hapticTap } from '@/utils/haptics';
+import { CloudSyncPanel } from '@/components/CloudSyncPanel';
 
 function formatDateDDMMYYYY(millis: number) {
   const date = new Date(millis);
@@ -529,6 +530,7 @@ export function Header() {
 
                 <div className="space-y-3">
                   <h4 className="text-sm font-medium">Data Management</h4>
+                  <CloudSyncPanel />
                   <Button
                     variant="outline"
                     size="sm"
