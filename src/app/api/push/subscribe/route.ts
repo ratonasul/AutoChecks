@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     webpush.setVapidDetails(subject, publicKey, privateKey);
 
     const payload = JSON.stringify({ title: 'Test Notification', body: 'Push subscription successful' });
-    await webpush.sendNotification(subscription, payload).catch(err => {
+    await webpush.sendNotification(subscription, payload).catch((err: unknown) => {
       console.error('web-push send error', err);
       // continue to return success to caller so client knows subscription was received
     });
