@@ -292,11 +292,6 @@ export function Header() {
     }
   };
 
-  const backupReminder =
-    !lastExportAt || Date.now() - lastExportAt > 7 * 24 * 60 * 60 * 1000
-      ? 'Backup recommended: export your data.'
-      : null;
-
   const debugSchedulePreview = (() => {
     const rows: Array<{ plate: string; doc: string; lead: number; trigger: number }> = [];
     const referenceNow = Date.now() + debugTimeShiftDays * 24 * 60 * 60 * 1000;
@@ -331,11 +326,10 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      {(!isOnline || backupReminder || queuedCount > 0) && (
+      {(!isOnline || queuedCount > 0) && (
         <div className="border-b px-4 py-1 text-xs sm:px-6 lg:px-8">
           {!isOnline && <span className="mr-3 text-amber-500">Offline mode active.</span>}
           {queuedCount > 0 && <span className="mr-3 text-blue-500">Queued requests: {queuedCount}</span>}
-          {backupReminder && <span className="text-muted-foreground">{backupReminder}</span>}
         </div>
       )}
       <div className="mx-auto flex min-h-14 w-full max-w-screen-2xl items-center justify-between px-4 py-2 sm:px-6 lg:px-8">

@@ -67,8 +67,13 @@ export function AuthGate({ children }: { children: ReactNode }) {
     const supabase = getSupabaseClient();
 
     const bootstrap = async () => {
-      const { data } = await supabase.auth.getSession();
-      const user = data.session?.user;
+      const { data, error } = await supabase.auth.getUser();
+      if (error || !data.user) {
+        await supabase.auth.signOut();
+        setPhase('auth');
+        return;
+      }
+      const user = data.user;
       if (!user) {
         setPhase('auth');
         return;
@@ -79,7 +84,13 @@ export function AuthGate({ children }: { children: ReactNode }) {
       // Existing sessions skip greeting and continue directly to app.
       setPhase('ready');
       smartSync(user.id).catch((error) => {
-        toast.error(error instanceof Error ? error.message : 'Background sync failed');
+        const message = error instanceof Error ? error.message : 'Background sync failed';
+        if (message.toLowerCase().includes('sub claim in jwt')) {
+          supabase.auth.signOut().finally(() => setPhase('auth'));
+          toast.error('Session expired. Please sign in again.');
+          return;
+        }
+        toast.error(message);
       });
     };
 
@@ -112,6 +123,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
       run().catch((error) => {
         console.error('Auth state change failed', error);
+        supabase.auth.signOut().finally(() => setPhase('auth'));
         setPhase('auth');
       });
     });

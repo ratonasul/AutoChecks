@@ -16,6 +16,27 @@ export type CloudSnapshotRow = {
   updated_at: string;
 };
 
+async function resolveCurrentUserId(expectedUserId?: string): Promise<string> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase.auth.getUser();
+  if (error) {
+    const message = error.message || '';
+    if (message.toLowerCase().includes('sub claim in jwt')) {
+      await supabase.auth.signOut();
+      throw new Error('Session expired. Please sign in again.');
+    }
+    throw new Error(error.message);
+  }
+  const currentUserId = data.user?.id;
+  if (!currentUserId) {
+    throw new Error('No authenticated user session found.');
+  }
+  if (expectedUserId && expectedUserId !== currentUserId) {
+    console.warn('Sync user mismatch detected. Using current authenticated user id.');
+  }
+  return currentUserId;
+}
+
 function sanitizeSettingsForCloud(settings: Settings): Omit<Settings, 'id' | 'cloudUserEmail' | 'cloudLastSyncedAt'> {
   const rest: Settings = { ...settings };
   delete rest.id;
@@ -39,12 +60,13 @@ export async function buildLocalSnapshot(): Promise<CloudPayload> {
 
 export async function uploadLocalSnapshot(userId: string): Promise<string> {
   const supabase = getSupabaseClient();
+  const resolvedUserId = await resolveCurrentUserId(userId);
   const payload = await buildLocalSnapshot();
   const nowIso = new Date().toISOString();
 
   const { error } = await supabase.from(CLOUD_TABLE).upsert(
     {
-      user_id: userId,
+      user_id: resolvedUserId,
       payload,
       updated_at: nowIso,
     },
@@ -61,10 +83,11 @@ export async function uploadLocalSnapshot(userId: string): Promise<string> {
 
 export async function downloadCloudSnapshot(userId: string): Promise<CloudSnapshotRow | null> {
   const supabase = getSupabaseClient();
+  const resolvedUserId = await resolveCurrentUserId(userId);
   const { data, error } = await supabase
     .from(CLOUD_TABLE)
     .select('user_id,payload,updated_at')
-    .eq('user_id', userId)
+    .eq('user_id', resolvedUserId)
     .maybeSingle();
 
   if (error) {
@@ -101,20 +124,22 @@ export async function applyCloudSnapshot(snapshot: CloudPayload): Promise<void> 
 }
 
 export async function pullCloudToLocal(userId: string): Promise<'applied' | 'empty'> {
-  const snapshot = await downloadCloudSnapshot(userId);
+  const resolvedUserId = await resolveCurrentUserId(userId);
+  const snapshot = await downloadCloudSnapshot(resolvedUserId);
   if (!snapshot) return 'empty';
   await applyCloudSnapshot(snapshot.payload);
   return 'applied';
 }
 
 export async function smartSync(userId: string): Promise<'pushed' | 'pulled' | 'pushed-new'> {
+  const resolvedUserId = await resolveCurrentUserId(userId);
   const [cloudSnapshot, settings] = await Promise.all([
-    downloadCloudSnapshot(userId),
+    downloadCloudSnapshot(resolvedUserId),
     getSettings(),
   ]);
 
   if (!cloudSnapshot) {
-    await uploadLocalSnapshot(userId);
+    await uploadLocalSnapshot(resolvedUserId);
     return 'pushed-new';
   }
 
@@ -126,6 +151,6 @@ export async function smartSync(userId: string): Promise<'pushed' | 'pulled' | '
     return 'pulled';
   }
 
-  await uploadLocalSnapshot(userId);
+  await uploadLocalSnapshot(resolvedUserId);
   return 'pushed';
 }

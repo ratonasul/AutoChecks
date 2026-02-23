@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabaseClient';
@@ -18,7 +18,6 @@ export function CloudSyncPanel() {
   const [cloudAutoSync, setCloudAutoSync] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<number | undefined>(undefined);
   const [busyAction, setBusyAction] = useState<string | null>(null);
-  const autoSyncInFlightRef = useRef(false);
 
   const runAction = async (id: string, action: () => Promise<void>) => {
     setBusyAction(id);
@@ -64,30 +63,6 @@ export function CloudSyncPanel() {
       authListener.subscription.unsubscribe();
     };
   }, [configured]);
-
-  useEffect(() => {
-    if (!configured || !cloudUserEmail || !cloudAutoSync || autoSyncInFlightRef.current) return;
-    const sync = async () => {
-      autoSyncInFlightRef.current = true;
-      try {
-        const supabase = getSupabaseClient();
-        const { data } = await supabase.auth.getUser();
-        const userId = data.user?.id;
-        if (!userId) return;
-        const result = await smartSync(userId);
-        const settings = await getSettings();
-        setLastSyncedAt(settings.cloudLastSyncedAt);
-        if (result === 'pulled') toast.success('Cloud sync complete (downloaded newer cloud snapshot)');
-        if (result === 'pushed') toast.success('Cloud sync complete (uploaded local snapshot)');
-        if (result === 'pushed-new') toast.success('Cloud sync complete (created first cloud snapshot)');
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : 'Auto sync failed');
-      } finally {
-        autoSyncInFlightRef.current = false;
-      }
-    };
-    sync();
-  }, [cloudAutoSync, cloudUserEmail, configured]);
 
   if (!configured) {
     return (
