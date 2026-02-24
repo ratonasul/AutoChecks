@@ -390,14 +390,14 @@ export function Header() {
 
   const syncChip =
     syncStatus.state === 'syncing'
-      ? { label: 'Syncing', className: 'border-blue-500/30 text-blue-500' }
+      ? { label: 'Syncing', dotClass: 'bg-blue-500' }
       : syncStatus.state === 'synced'
-        ? { label: 'Synced', className: 'border-emerald-500/30 text-emerald-500' }
+        ? { label: 'Synced', dotClass: 'bg-emerald-500' }
         : syncStatus.state === 'offline-pending'
-          ? { label: 'Pending', className: 'border-amber-500/30 text-amber-500' }
+          ? { label: 'Pending', dotClass: 'bg-amber-500' }
           : syncStatus.state === 'error'
-            ? { label: 'Sync error', className: 'border-rose-500/30 text-rose-500' }
-            : { label: 'Idle', className: 'border-muted-foreground/20 text-muted-foreground' };
+            ? { label: 'Sync error', dotClass: 'bg-rose-500' }
+            : { label: 'Idle', dotClass: 'bg-muted-foreground' };
 
   const formatLastSync = (value?: number) => {
     if (!value) return 'Never';
@@ -442,8 +442,12 @@ export function Header() {
       <div className="mx-auto flex min-h-14 w-full max-w-screen-2xl items-center justify-between px-4 py-2 sm:px-6 lg:px-8">
         <div className="flex min-w-0 items-center gap-2 pr-3">
           <h1 className="truncate text-lg font-semibold">{appName}</h1>
-          <span className={`rounded border px-2 py-0.5 text-[10px] font-medium ${syncChip.className}`}>
-            {syncChip.label}
+          <span
+            className={`h-2.5 w-2.5 flex-shrink-0 rounded-full ${syncChip.dotClass}`}
+            title={`Sync status: ${syncChip.label}`}
+            aria-label={`Sync status: ${syncChip.label}`}
+          >
+            <span className="sr-only">Sync status: {syncChip.label}</span>
           </span>
         </div>
         <div className="flex items-center gap-1 sm:gap-2">
