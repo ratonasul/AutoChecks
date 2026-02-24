@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { scheduleRuntimeExpiryReminders } from "@/services/reminders/runtimeReminderScheduler";
+import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabaseClient";
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -23,6 +24,15 @@ export default function PushManager() {
   const [isPushAvailable, setIsPushAvailable] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  async function getAuthHeaders(): Promise<Record<string, string>> {
+    if (!isSupabaseConfigured()) return {};
+    const supabase = getSupabaseClient();
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return {};
+    return { Authorization: `Bearer ${token}` };
+  }
 
   function clearTimers() {
     if (timeoutRef.current) {
@@ -97,7 +107,7 @@ export default function PushManager() {
       setStatus('sending-subscription');
       await fetch('/api/push/subscribe', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await getAuthHeaders()) },
         body: JSON.stringify({ subscription: sub }),
       });
 
@@ -130,7 +140,7 @@ export default function PushManager() {
       await sub.unsubscribe();
       await fetch('/api/push/unsubscribe', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await getAuthHeaders()) },
         body: JSON.stringify({ subscription: sub }),
       });
 
@@ -159,7 +169,7 @@ export default function PushManager() {
 
       await fetch('/api/push/test', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await getAuthHeaders()) },
         body: JSON.stringify({ subscription: sub }),
       });
 

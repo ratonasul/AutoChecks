@@ -13,8 +13,9 @@ export interface CheckResult {
 
 export class AssistedCheckService {
   async saveCheckResult(result: CheckResult): Promise<void> {
+    const now = Date.now();
     // Update vehicle expiry
-    const update: any = {};
+    const update: Record<string, unknown> = { updatedAt: now };
     if (result.type === 'ITP') update.itpExpiryMillis = result.expiryMillis;
     else if (result.type === 'RCA') update.rcaExpiryMillis = result.expiryMillis;
     else if (result.type === 'VIGNETTE') update.vignetteExpiryMillis = result.expiryMillis;
@@ -28,6 +29,7 @@ export class AssistedCheckService {
       status: result.status,
       expiryMillis: result.expiryMillis,
       checkedAt: result.checkedAt,
+      updatedAt: now,
       note: result.note,
       sourceUrl: result.sourceUrl,
     });

@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { canonicalPlate, normalizePlate, normalizeVin, validatePlate, validateVin } from '@/utils/validation'
+import { hapticSuccess, hapticTap } from '@/utils/haptics'
 
 interface VehicleCardProps {
   vehicle: Vehicle
@@ -92,8 +93,19 @@ export function VehicleCard({ vehicle, onCheckSave }: VehicleCardProps) {
     if (!vehicle.id) return
     if (!confirm(`Delete vehicle ${vehicle.plate}?`)) return
 
-    await db.vehicles.update(vehicle.id, { deletedAt: Date.now() })
-    toast('Vehicle moved to recycle bin')
+    const deletedAt = Date.now()
+    await db.vehicles.update(vehicle.id, { deletedAt, updatedAt: deletedAt })
+    hapticTap()
+    toast('Vehicle moved to recycle bin', {
+      duration: 5000,
+      action: {
+        label: 'Undo',
+        onClick: async () => {
+          await db.vehicles.update(vehicle.id!, { deletedAt: null, updatedAt: Date.now() })
+          hapticSuccess()
+        },
+      },
+    })
     onCheckSave()
   }
 
@@ -136,8 +148,10 @@ export function VehicleCard({ vehicle, onCheckSave }: VehicleCardProps) {
       plate: normalizedPlate,
       vin: normalizedVin || undefined,
       notes: editNotes.trim() || undefined,
+      updatedAt: Date.now(),
     })
     setEditOpen(false)
+    hapticSuccess()
     toast('Vehicle updated')
     onCheckSave()
   }
@@ -194,6 +208,9 @@ export function VehicleCard({ vehicle, onCheckSave }: VehicleCardProps) {
                       <span className="font-medium">VIN:</span> {vehicle.vin}
                     </div>
                   )}
+                  <div className="text-xs text-muted-foreground">
+                    Last changed: {new Date(vehicle.updatedAt || vehicle.createdAt).toLocaleString()}
+                  </div>
 
                   <div className="space-y-3">
                     {/* ITP */}
@@ -282,25 +299,25 @@ export function VehicleCard({ vehicle, onCheckSave }: VehicleCardProps) {
                   </div>
 
                   <div className="flex flex-col gap-2 pt-2">
-                    <Button size="sm" onClick={() => handleCheck('ITP')} className="w-full">
+                    <Button size="sm" onClick={() => handleCheck('ITP')} className="w-full min-h-[44px]">
                       <CheckCircle className="mr-2 h-4 w-4 flex-shrink-0" />
                       <span className="truncate">Check ITP</span>
                     </Button>
-                    <Button size="sm" onClick={() => handleCheck('RCA')} className="w-full">
+                    <Button size="sm" onClick={() => handleCheck('RCA')} className="w-full min-h-[44px]">
                       <AlertTriangle className="mr-2 h-4 w-4 flex-shrink-0" />
                       <span className="truncate">Check RCA</span>
                     </Button>
-                    <Button size="sm" onClick={() => handleCheck('VIGNETTE')} className="w-full">
+                    <Button size="sm" onClick={() => handleCheck('VIGNETTE')} className="w-full min-h-[44px]">
                       <XCircle className="mr-2 h-4 w-4 flex-shrink-0" />
                       <span className="truncate">Check Vignette</span>
                     </Button>
                   </div>
                   <div className="grid grid-cols-2 gap-2 pt-2">
-                    <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
+                    <Button size="sm" variant="outline" onClick={() => setEditOpen(true)} className="min-h-[44px]">
                       <Pencil className="mr-2 h-4 w-4" />
                       Edit
                     </Button>
-                    <Button size="sm" variant="destructive" onClick={handleDelete}>
+                    <Button size="sm" variant="destructive" onClick={handleDelete} className="min-h-[44px]">
                       <Trash2 className="mr-2 h-4 w-4" />
                       Delete
                     </Button>

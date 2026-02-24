@@ -1,6 +1,6 @@
 'use client';
 
-import { Download, Upload, Settings, Moon, Sun, Monitor, Trash2, Info, Bell } from 'lucide-react';
+import { Download, Upload, Settings, Moon, Sun, Monitor, Trash2, Info, Bell, UserCircle2, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { exportData } from '@/utils/exportData';
@@ -27,8 +27,13 @@ import { getReminderSnoozeKey, isReminderSnoozed, snoozeReminder } from '@/servi
 import { defaultFeatureFlags } from '@/lib/featureFlags';
 import { getCompanyDisplayName, getSettings, upsertSettings } from '@/lib/settings';
 import { flushQueuedRequests, getQueuedRequestCount } from '@/lib/networkQueue';
-import { hapticTap } from '@/utils/haptics';
+import { hapticSuccess, hapticTap } from '@/utils/haptics';
 import { CloudSyncPanel } from '@/components/CloudSyncPanel';
+import { isOwnerEmail } from '@/lib/adminAccess';
+import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabaseClient';
+import { getSyncStatus, type SyncStatusSnapshot, subscribeSyncStatus } from '@/lib/syncStatus';
+import { retryCloudSyncNow } from '@/lib/cloudSync';
+import { resetLocalDataForAccount } from '@/lib/cloudSync';
 
 function formatDateDDMMYYYY(millis: number) {
   const date = new Date(millis);
@@ -47,6 +52,7 @@ export function Header() {
   const [restoreOpen, setRestoreOpen] = useState(false);
   const [importPreviewOpen, setImportPreviewOpen] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [appNameInput, setAppNameInput] = useState('AutoChecks');
   const [companyContactInput, setCompanyContactInput] = useState('');
   const [companyTimezoneInput, setCompanyTimezoneInput] = useState('');
@@ -59,6 +65,9 @@ export function Header() {
   const [appName, setAppName] = useState('AutoChecks');
   const [isOnline, setIsOnline] = useState(true);
   const [queuedCount, setQueuedCount] = useState(0);
+  const [canAccessOwnerTools, setCanAccessOwnerTools] = useState(false);
+  const [accountEmail, setAccountEmail] = useState<string | null>(null);
+  const [syncStatus, setSyncStatusState] = useState<SyncStatusSnapshot>(getSyncStatus());
   const { theme, setTheme } = useTheme();
   const vehicles = useLiveQuery(
     () => db.vehicles.toArray().then((items) => items.filter((vehicle) => !vehicle.deletedAt)),
@@ -130,11 +139,43 @@ export function Header() {
         setCompanyContactInput(settings.companyContact || '');
         setCompanyTimezoneInput(settings.companyTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone);
         setLastExportAt(settings.lastExportAt || null);
+        if (settings.cloudLastSyncedAt) {
+          setSyncStatusState({ state: 'synced', lastSyncedAt: settings.cloudLastSyncedAt });
+        }
       } catch (error) {
         console.error('Failed to load settings:', error);
       }
     };
     loadSettings();
+  }, []);
+
+  useEffect(() => subscribeSyncStatus(setSyncStatusState), []);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      setCanAccessOwnerTools(false);
+      return;
+    }
+
+    const supabase = getSupabaseClient();
+    const load = async () => {
+      const { data } = await supabase.auth.getSession();
+      setAccountEmail(data.session?.user?.email ?? null);
+      setCanAccessOwnerTools(isOwnerEmail(data.session?.user?.email));
+    };
+    load().catch((error) => {
+      console.error('Failed to resolve owner access', error);
+      setCanAccessOwnerTools(false);
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAccountEmail(session?.user?.email ?? null);
+      setCanAccessOwnerTools(isOwnerEmail(session?.user?.email));
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -256,11 +297,32 @@ export function Header() {
   const handleClearData = async () => {
     if (confirm('Are you sure you want to clear all data? This action cannot be undone.')) {
       try {
+        const [vehiclesSnapshot, checksSnapshot, settingsSnapshot] = await Promise.all([
+          db.vehicles.toArray(),
+          db.checks.toArray(),
+          db.settings.toArray(),
+        ]);
         await db.vehicles.clear();
         await db.checks.clear();
-        toast.success('All data cleared successfully');
-        // Refresh the page to update the UI
-        window.location.reload();
+        hapticTap();
+        toast('All data cleared', {
+          duration: 5000,
+          action: {
+            label: 'Undo',
+            onClick: async () => {
+              await db.transaction('rw', db.vehicles, db.checks, db.settings, async () => {
+                await db.vehicles.clear();
+                await db.checks.clear();
+                await db.settings.clear();
+                if (vehiclesSnapshot.length > 0) await db.vehicles.bulkAdd(vehiclesSnapshot);
+                if (checksSnapshot.length > 0) await db.checks.bulkAdd(checksSnapshot);
+                if (settingsSnapshot.length > 0) await db.settings.bulkAdd(settingsSnapshot);
+              });
+              hapticSuccess();
+              toast.success('Data restored');
+            },
+          },
+        });
       } catch (error) {
         toast.error('Failed to clear data');
       }
@@ -269,7 +331,8 @@ export function Header() {
 
   const handleRestoreVehicle = async (vehicleId?: number) => {
     if (!vehicleId) return;
-    await db.vehicles.update(vehicleId, { deletedAt: null });
+    await db.vehicles.update(vehicleId, { deletedAt: null, updatedAt: Date.now() });
+    hapticSuccess();
     toast.success('Vehicle restored');
   };
 
@@ -278,6 +341,7 @@ export function Header() {
     if (!confirm('Permanently delete this vehicle?')) return;
     await db.vehicles.delete(vehicleId);
     await db.checks.where('vehicleId').equals(vehicleId).delete();
+    hapticTap();
     toast.success('Vehicle permanently deleted');
   };
 
@@ -324,17 +388,100 @@ export function Header() {
     return rows.sort((a, b) => a.trigger - b.trigger).slice(0, 12);
   })();
 
+  const syncChip =
+    syncStatus.state === 'syncing'
+      ? { label: 'Syncing', className: 'border-blue-500/30 text-blue-500' }
+      : syncStatus.state === 'synced'
+        ? { label: 'Synced', className: 'border-emerald-500/30 text-emerald-500' }
+        : syncStatus.state === 'offline-pending'
+          ? { label: 'Pending', className: 'border-amber-500/30 text-amber-500' }
+          : syncStatus.state === 'error'
+            ? { label: 'Sync error', className: 'border-rose-500/30 text-rose-500' }
+            : { label: 'Idle', className: 'border-muted-foreground/20 text-muted-foreground' };
+
+  const formatLastSync = (value?: number) => {
+    if (!value) return 'Never';
+    return new Date(value).toLocaleString();
+  };
+
+  const ownerExportReminder =
+    canAccessOwnerTools && (!lastExportAt || Date.now() - lastExportAt > 30 * 24 * 60 * 60 * 1000)
+      ? 'Owner reminder: export a backup at least monthly.'
+      : null;
+
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      {(!isOnline || queuedCount > 0) && (
+      {(!isOnline || queuedCount > 0 || syncStatus.state === 'offline-pending' || syncStatus.state === 'error' || !!ownerExportReminder) && (
         <div className="border-b px-4 py-1 text-xs sm:px-6 lg:px-8">
           {!isOnline && <span className="mr-3 text-amber-500">Offline mode active.</span>}
           {queuedCount > 0 && <span className="mr-3 text-blue-500">Queued requests: {queuedCount}</span>}
+          <span className="mr-3 text-muted-foreground">Last sync: {formatLastSync(syncStatus.lastSyncedAt)}</span>
+          {ownerExportReminder && <span className="mr-3 text-muted-foreground">{ownerExportReminder}</span>}
+          {(syncStatus.state === 'offline-pending' || syncStatus.state === 'error') && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 px-2 text-xs"
+              onClick={async () => {
+                try {
+                  await retryCloudSyncNow();
+                  toast.success('Cloud sync retry succeeded');
+                } catch (error) {
+                  const message = error instanceof Error ? error.message : 'Retry failed';
+                  if (message !== 'Offline') {
+                    toast.error(message);
+                  }
+                }
+              }}
+            >
+              Retry sync
+            </Button>
+          )}
         </div>
       )}
       <div className="mx-auto flex min-h-14 w-full max-w-screen-2xl items-center justify-between px-4 py-2 sm:px-6 lg:px-8">
-        <h1 className="text-lg font-semibold truncate pr-3">{appName}</h1>
+        <div className="flex min-w-0 items-center gap-2 pr-3">
+          <h1 className="truncate text-lg font-semibold">{appName}</h1>
+          <span className={`rounded border px-2 py-0.5 text-[10px] font-medium ${syncChip.className}`}>
+            {syncChip.label}
+          </span>
+        </div>
         <div className="flex items-center gap-1 sm:gap-2">
+          <Dialog open={accountMenuOpen} onOpenChange={setAccountMenuOpen}>
+            <DialogTrigger asChild>
+              <Button variant="ghost" size="sm" title="Account">
+                <UserCircle2 className="h-4 w-4" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-sm">
+              <DialogHeader>
+                <DialogTitle>Account</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">{accountEmail || 'Not signed in'}</p>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={async () => {
+                    try {
+                      const supabase = getSupabaseClient();
+                      await resetLocalDataForAccount();
+                      const { error } = await supabase.auth.signOut();
+                      if (error) throw new Error(error.message);
+                      hapticTap();
+                      toast.success('Signed out');
+                      setAccountMenuOpen(false);
+                    } catch (error) {
+                      toast.error(error instanceof Error ? error.message : 'Failed to sign out');
+                    }
+                  }}
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Sign Out
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
           <Dialog>
             <DialogTrigger asChild>
               <Button variant="ghost" size="sm" title="Reminders" className="relative">
@@ -346,11 +493,11 @@ export function Header() {
                 )}
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-lg">
+              <DialogContent className="sm:max-w-lg">
               <DialogHeader>
-                <DialogTitle>Upcoming Reminders</DialogTitle>
+                <DialogTitle>Notifications</DialogTitle>
                 <DialogDescription>
-                  All near-expiry checks are listed here.
+                  All near-expiry documents are listed here.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-2 max-h-[50vh] overflow-auto">
@@ -453,7 +600,7 @@ export function Header() {
               <DialogHeader>
                 <DialogTitle>Settings</DialogTitle>
                 <DialogDescription>
-                  Customize your AutoChecks experience
+                  Customize your experience
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-6">
@@ -544,18 +691,14 @@ export function Header() {
                   </Button>
                 </div>
 
-                <div className="space-y-3">
-                  <h4 className="text-sm font-medium">About</h4>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Info className="h-4 w-4" />
-                    AutoChecks v1.0 - Vehicle expiry tracking PWA
-                  </div>
-                  {process.env.NODE_ENV !== 'production' && (
+                {canAccessOwnerTools && (
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-medium">Owner Tools</h4>
                     <Button variant="outline" size="sm" onClick={() => setDebugOpen(true)}>
                       Debug Tools
                     </Button>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             </DialogContent>
           </Dialog>

@@ -12,7 +12,9 @@ import { theme } from '@/lib/theme';
 import { toast } from 'sonner';
 import PushManager from '@/components/PushManager';
 import { canonicalPlate, normalizePlate, normalizeVin, validatePlate, validateVin } from '@/utils/validation';
-import { hapticSuccess } from '@/utils/haptics';
+import { hapticSuccess, hapticTap } from '@/utils/haptics';
+import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabaseClient';
+import { isOwnerEmail } from '@/lib/adminAccess';
 
 export default function AddVehicle() {
   const [plate, setPlate] = useState('');
@@ -21,6 +23,7 @@ export default function AddVehicle() {
   const [fromFab, setFromFab] = useState(false);
   const [animateIn, setAnimateIn] = useState(false);
   const [animationReady, setAnimationReady] = useState(false);
+  const [canAccessNotificationTesting, setCanAccessNotificationTesting] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -33,6 +36,28 @@ export default function AddVehicle() {
     setAnimationReady(true);
     const id = requestAnimationFrame(() => setAnimateIn(true));
     return () => cancelAnimationFrame(id);
+  }, []);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      setCanAccessNotificationTesting(false);
+      return;
+    }
+    const supabase = getSupabaseClient();
+    const load = async () => {
+      const { data } = await supabase.auth.getSession();
+      setCanAccessNotificationTesting(isOwnerEmail(data.session?.user?.email));
+    };
+    load().catch((error) => {
+      console.error('Failed to resolve owner access for push testing', error);
+      setCanAccessNotificationTesting(false);
+    });
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setCanAccessNotificationTesting(isOwnerEmail(session?.user?.email));
+    });
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -76,6 +101,7 @@ export default function AddVehicle() {
       vin: normalizedVin || undefined,
       notes: notes.trim() || undefined,
       createdAt: Date.now(),
+      updatedAt: Date.now(),
       deletedAt: null,
     });
 
@@ -159,12 +185,15 @@ export default function AddVehicle() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => router.back()}
-                  className="flex-1"
+                  onClick={() => {
+                    hapticTap();
+                    router.back();
+                  }}
+                  className="flex-1 min-h-[44px]"
                 >
                   Cancel
                 </Button>
-                <Button type="submit" className="flex-1" disabled={!plate.trim()}>
+                <Button type="submit" className="flex-1 min-h-[44px]" disabled={!plate.trim()}>
                   Add Vehicle
                 </Button>
               </div>
@@ -172,17 +201,19 @@ export default function AddVehicle() {
           </CardContent>
         </Card>
 
-        <Card className={`${theme.borderRadius.card} ${theme.shadows.card} mt-6`}>
-          <CardHeader>
-            <CardTitle className="text-lg">Push Notification Test</CardTitle>
-            <p className={`text-sm ${theme.colors.textMuted}`}>
-              Schedule a test push in 5 seconds so you can lock the phone and verify delivery.
-            </p>
-          </CardHeader>
-          <CardContent>
-            <PushManager />
-          </CardContent>
-        </Card>
+        {canAccessNotificationTesting && (
+          <Card className={`${theme.borderRadius.card} ${theme.shadows.card} mt-6`}>
+            <CardHeader>
+              <CardTitle className="text-lg">Push Notification Test</CardTitle>
+              <p className={`text-sm ${theme.colors.textMuted}`}>
+                Schedule a test push in 5 seconds so you can lock the phone and verify delivery.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <PushManager />
+            </CardContent>
+          </Card>
+        )}
         </main>
       </div>
     </div>

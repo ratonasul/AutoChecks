@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { GreetingScreen } from '@/components/GreetingScreen';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabaseClient';
-import { smartSync } from '@/lib/cloudSync';
+import { hydrateLocalFromCloud, resetLocalDataForAccount } from '@/lib/cloudSync';
 import { getSettings, upsertSettings } from '@/lib/settings';
 
 type GatePhase = 'checking' | 'auth' | 'greeting' | 'syncing' | 'ready';
@@ -44,6 +44,10 @@ function normalizeAuthError(message: string): string {
   return message;
 }
 
+function normalizeEmail(value?: string | null): string {
+  return (value || '').trim().toLowerCase();
+}
+
 export function AuthGate({ children }: { children: ReactNode }) {
   const configured = useMemo(() => isSupabaseConfigured(), []);
   const [phase, setPhase] = useState<GatePhase>('checking');
@@ -54,9 +58,36 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [syncBusy, setSyncBusy] = useState(false);
   const [userIdForSync, setUserIdForSync] = useState<string | null>(null);
   const [greetingName, setGreetingName] = useState('Welcome');
+  const phaseRef = useRef<GatePhase>('checking');
   const checks = passwordChecks(password);
   const strength = passwordStrength(password);
   const signupPolicyPassed = checks.minLength && checks.upper && checks.lower && checks.number && checks.symbol;
+
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
+
+  const prepareSignedInUser = async (userId: string, email?: string | null) => {
+    const settings = await getSettings();
+    const previousUserId = (settings.cloudUserId || '').trim();
+    const previousEmail = normalizeEmail(settings.cloudUserEmail);
+    const nextEmail = normalizeEmail(email);
+
+    const accountChanged =
+      (previousUserId && previousUserId !== userId) ||
+      (!previousUserId && previousEmail && nextEmail && previousEmail !== nextEmail);
+
+    if (accountChanged) {
+      await resetLocalDataForAccount(userId, email ?? undefined);
+      toast.message('Account changed. Local data was isolated for this user.');
+      return;
+    }
+
+    await upsertSettings({
+      cloudUserId: userId,
+      cloudUserEmail: email ?? undefined,
+    });
+  };
 
   useEffect(() => {
     if (!configured) {
@@ -79,19 +110,26 @@ export function AuthGate({ children }: { children: ReactNode }) {
         return;
       }
 
-      await upsertSettings({ cloudUserEmail: user.email ?? undefined });
+      await prepareSignedInUser(user.id, user.email);
 
       // Existing sessions skip greeting and continue directly to app.
-      setPhase('ready');
-      smartSync(user.id).catch((error) => {
+      setPhase('syncing');
+      setSyncBusy(true);
+      try {
+        await hydrateLocalFromCloud(user.id, user.email ?? undefined);
+      } catch (error) {
         const message = error instanceof Error ? error.message : 'Background sync failed';
         if (message.toLowerCase().includes('sub claim in jwt')) {
-          supabase.auth.signOut().finally(() => setPhase('auth'));
+          await supabase.auth.signOut();
+          setPhase('auth');
           toast.error('Session expired. Please sign in again.');
           return;
         }
         toast.error(message);
-      });
+      } finally {
+        setSyncBusy(false);
+        setPhase('ready');
+      }
     };
 
     bootstrap().catch((error) => {
@@ -103,13 +141,18 @@ export function AuthGate({ children }: { children: ReactNode }) {
       const run = async () => {
         const user = session?.user;
         if (!user) {
+          await resetLocalDataForAccount();
           setPhase('auth');
           return;
         }
 
-        await upsertSettings({ cloudUserEmail: user.email ?? undefined });
+        await prepareSignedInUser(user.id, user.email);
 
         if (event === 'SIGNED_IN') {
+          if (phaseRef.current !== 'auth') {
+            setPhase('ready');
+            return;
+          }
           const settings = await getSettings();
           setGreetingName(settings.username?.trim() || fallbackNameFromEmail(user.email));
           setUserIdForSync(user.id);
@@ -181,10 +224,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
     setPhase('syncing');
     setSyncBusy(true);
     try {
-      const result = await smartSync(userIdForSync);
-      if (result === 'pulled') toast.success('Sync complete: downloaded cloud data');
-      if (result === 'pushed') toast.success('Sync complete: uploaded local data');
-      if (result === 'pushed-new') toast.success('Sync complete: created cloud backup');
+      await hydrateLocalFromCloud(userIdForSync);
+      toast.success('Sync complete: loaded cloud data');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Sync failed');
     } finally {
