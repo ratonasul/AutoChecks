@@ -53,6 +53,7 @@ export function Header() {
   const [restoreOpen, setRestoreOpen] = useState(false);
   const [importPreviewOpen, setImportPreviewOpen] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [debugPushToolsOpen, setDebugPushToolsOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [appNameInput, setAppNameInput] = useState('AutoChecks');
@@ -798,6 +799,14 @@ export function Header() {
                   <Button
                     variant="outline"
                     size="sm"
+                    onClick={() => setNotificationsOpen(true)}
+                    className="w-full justify-start"
+                  >
+                    Manage Notifications
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => setRestoreOpen(true)}
                     className="flex items-center gap-2"
                   >
@@ -939,6 +948,17 @@ export function Header() {
           ) : (
             <p className="text-sm text-muted-foreground">No preview available.</p>
           )}
+        </DialogContent>
+      </Dialog>
+      <Dialog open={notificationsOpen} onOpenChange={setNotificationsOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Notifications</DialogTitle>
+            <DialogDescription>
+              Enable or disable push notifications for this device.
+            </DialogDescription>
+          </DialogHeader>
+          <PushManager showTests={false} />
         </DialogContent>
       </Dialog>
       <Dialog open={debugOpen} onOpenChange={setDebugOpen}>

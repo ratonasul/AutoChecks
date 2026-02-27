@@ -17,7 +17,11 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray;
 }
 
-export default function PushManager() {
+type PushManagerProps = {
+  showTests?: boolean;
+};
+
+export default function PushManager({ showTests = true }: PushManagerProps) {
   const [status, setStatus] = useState<string>("idle");
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -269,33 +273,39 @@ export default function PushManager() {
             Unsubscribe
           </Button>
         )}
-        <Button
-          type="button"
-          variant="secondary"
-          onClick={sendTestWithDelay}
-          disabled={!isPushAvailable || !subscription || countdown !== null}
-          className="w-full sm:w-auto"
-        >
-          {countdown !== null ? `Sending in ${countdown}s...` : 'Notification Test (5s)'}
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={scheduleLogicTest}
-          disabled={!isPushAvailable || !subscription}
-          className="w-full sm:w-auto"
-        >
-          Reminder Logic Test (~1m)
-        </Button>
+        {showTests && (
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={sendTestWithDelay}
+            disabled={!isPushAvailable || !subscription || countdown !== null}
+            className="w-full sm:w-auto"
+          >
+            {countdown !== null ? `Sending in ${countdown}s...` : 'Notification Test (5s)'}
+          </Button>
+        )}
+        {showTests && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={scheduleLogicTest}
+            disabled={!isPushAvailable || !subscription}
+            className="w-full sm:w-auto"
+          >
+            Reminder Logic Test (~1m)
+          </Button>
+        )}
       </div>
       {!isPushAvailable && (
         <p className="text-xs text-destructive">
           Push requires HTTPS (or localhost) and a browser with Service Worker support.
         </p>
       )}
-      <p className="text-xs text-muted-foreground">
-        Tap test, lock your phone within 5 seconds, and wait for the notification.
-      </p>
+      {showTests && (
+        <p className="text-xs text-muted-foreground">
+          Tap test, lock your phone within 5 seconds, and wait for the notification.
+        </p>
+      )}
     </div>
   );
 }
