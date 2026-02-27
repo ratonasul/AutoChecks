@@ -918,11 +918,16 @@ export function Header() {
               <Button
                 variant="outline"
                 onClick={async () => {
+                  if (queuedCount === 0) {
+                    toast.message('No queued requests. Queue is only used when you were offline and actions needed retry.');
+                    return;
+                  }
                   const result = await flushQueuedRequests();
                   setQueuedCount(getQueuedRequestCount());
                   toast(`Queue flush: ${result.sent} sent, ${result.failed} failed`);
                 }}
                 className="min-w-[160px] flex-1 sm:flex-none"
+                disabled={queuedCount === 0}
               >
                 Send Queued Requests
               </Button>
@@ -942,7 +947,7 @@ export function Header() {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Send Queued Requests retries reminder network calls saved while offline.
+              Send Queued Requests retries pending offline network calls. If you were always online, this stays at 0.
             </p>
             {debugPushToolsOpen && (
               <div className="rounded border p-2">

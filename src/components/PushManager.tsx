@@ -250,9 +250,9 @@ export default function PushManager() {
         <div className="text-sm">Not subscribed</div>
       )}
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         {!subscription && (
-          <Button type="button" onClick={subscribe} disabled={!isPushAvailable} className="min-w-[150px] flex-1 sm:flex-none">
+          <Button type="button" onClick={subscribe} disabled={!isPushAvailable} className="w-full sm:w-auto">
             Subscribe
           </Button>
         )}
@@ -262,7 +262,7 @@ export default function PushManager() {
             variant="outline"
             onClick={unsubscribe}
             disabled={!isPushAvailable}
-            className="min-w-[150px] flex-1 sm:flex-none"
+            className="w-full sm:w-auto"
           >
             Unsubscribe
           </Button>
@@ -272,7 +272,7 @@ export default function PushManager() {
           variant="secondary"
           onClick={sendTestWithDelay}
           disabled={!isPushAvailable || !subscription || countdown !== null}
-          className="min-w-[150px] flex-1 sm:flex-none"
+          className="w-full sm:w-auto"
         >
           {countdown !== null ? `Sending in ${countdown}s...` : 'Notification Test (5s)'}
         </Button>
@@ -281,7 +281,7 @@ export default function PushManager() {
           variant="outline"
           onClick={scheduleLogicTest}
           disabled={!isPushAvailable || !subscription}
-          className="min-w-[150px] flex-1 sm:flex-none"
+          className="w-full sm:w-auto"
         >
           Reminder Logic Test (~1m)
         </Button>
