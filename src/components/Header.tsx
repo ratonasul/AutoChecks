@@ -452,6 +452,61 @@ export function Header() {
     toast.success(`Sent ${rowsToSend.length} debug notification(s).`);
   };
 
+  const triggerAllSoonExpiryNotifications = async () => {
+    const docs: Array<{ plate: string; doc: string; expiry: number; daysLeft: number }> = [];
+    for (const vehicle of vehicles || []) {
+      const candidates = [
+        { doc: 'ITP', expiry: vehicle.itpExpiryMillis },
+        { doc: 'RCA', expiry: vehicle.rcaExpiryMillis },
+        { doc: 'Vignette', expiry: vehicle.vignetteExpiryMillis },
+      ];
+      for (const item of candidates) {
+        if (!item.expiry) continue;
+        const state = calculateReminderState(item.expiry);
+        if (!state.showReminderBanner) continue;
+        docs.push({
+          plate: vehicle.plate,
+          doc: item.doc,
+          expiry: item.expiry,
+          daysLeft: state.daysLeft,
+        });
+      }
+    }
+
+    if (docs.length === 0) {
+      toast.message('No near-expiry documents found.');
+      return;
+    }
+
+    if (typeof Notification === 'undefined') {
+      toast.error('Notifications are not supported in this browser.');
+      return;
+    }
+    if (Notification.permission !== 'granted') {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        toast.error('Notification permission was not granted.');
+        return;
+      }
+    }
+
+    const reg = typeof navigator !== 'undefined' && 'serviceWorker' in navigator
+      ? await navigator.serviceWorker.getRegistration()
+      : null;
+
+    for (const row of docs.slice(0, 20)) {
+      const title = `Expiry Alert: ${row.doc}`;
+      const body = `${row.plate} expires on ${new Date(row.expiry).toLocaleDateString()} (${row.daysLeft}d)`;
+      if (reg) {
+        await reg.showNotification(title, { body, icon: '/favicon.ico' });
+      } else {
+        new Notification(title, { body });
+      }
+    }
+
+    toast.success(`Sent ${Math.min(docs.length, 20)} near-expiry notification(s).`);
+  };
+
   const syncChip =
     syncStatus.state === 'syncing'
       ? { label: 'Syncing', dotClass: 'bg-blue-500' }
@@ -887,7 +942,7 @@ export function Header() {
         </DialogContent>
       </Dialog>
       <Dialog open={debugOpen} onOpenChange={setDebugOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Debug Tools</DialogTitle>
           </DialogHeader>
@@ -914,7 +969,7 @@ export function Header() {
                 Simulated now: {new Date(Date.now() + debugTimeShiftDays * 24 * 60 * 60 * 1000).toLocaleString()}
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
               <Button
                 variant="outline"
                 onClick={async () => {
@@ -944,6 +999,13 @@ export function Header() {
                 className="min-w-[160px] flex-1 sm:flex-none"
               >
                 Run Shifted Notifications
+              </Button>
+              <Button
+                variant="outline"
+                onClick={triggerAllSoonExpiryNotifications}
+                className="min-w-[160px] flex-1 sm:flex-none"
+              >
+                Notify All Near-Expiry
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">

@@ -244,7 +244,9 @@ export default function PushManager() {
       {subscription ? (
         <div>
           <div className="text-sm">Subscribed</div>
-          <div className="max-w-full truncate break-all text-xs">{(subscription.endpoint || subscription.toJSON?.().endpoint)?.slice(0, 120)}</div>
+          <div className="max-w-full break-all whitespace-normal text-xs leading-tight">
+            {(subscription.endpoint || subscription.toJSON?.().endpoint)?.slice(0, 180)}
+          </div>
         </div>
       ) : (
         <div className="text-sm">Not subscribed</div>
