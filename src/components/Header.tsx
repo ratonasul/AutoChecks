@@ -34,6 +34,7 @@ import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabaseClient';
 import { getSyncStatus, type SyncStatusSnapshot, subscribeSyncStatus } from '@/lib/syncStatus';
 import { retryCloudSyncNow } from '@/lib/cloudSync';
 import { resetLocalDataForAccount } from '@/lib/cloudSync';
+import PushManager from '@/components/PushManager';
 
 function formatDateDDMMYYYY(millis: number) {
   const date = new Date(millis);
@@ -52,6 +53,7 @@ export function Header() {
   const [restoreOpen, setRestoreOpen] = useState(false);
   const [importPreviewOpen, setImportPreviewOpen] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
+  const [debugPushToolsOpen, setDebugPushToolsOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [appNameInput, setAppNameInput] = useState('AutoChecks');
   const [companyContactInput, setCompanyContactInput] = useState('');
@@ -861,7 +863,18 @@ export function Header() {
               >
                 Flush Queue
               </Button>
+              <Button
+                variant="outline"
+                onClick={() => setDebugPushToolsOpen((value) => !value)}
+              >
+                {debugPushToolsOpen ? 'Hide Notification Test' : 'Notification Test'}
+              </Button>
             </div>
+            {debugPushToolsOpen && (
+              <div className="rounded border p-2">
+                <PushManager />
+              </div>
+            )}
             <div className="space-y-1">
               <p className="text-sm font-medium">Schedule Preview</p>
               <div className="max-h-40 overflow-auto rounded border">
