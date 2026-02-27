@@ -244,15 +244,15 @@ export default function PushManager() {
       {subscription ? (
         <div>
           <div className="text-sm">Subscribed</div>
-          <div className="truncate text-xs">{(subscription.endpoint || subscription.toJSON?.().endpoint)?.slice(0, 80)}</div>
+          <div className="max-w-full truncate break-all text-xs">{(subscription.endpoint || subscription.toJSON?.().endpoint)?.slice(0, 120)}</div>
         </div>
       ) : (
         <div className="text-sm">Not subscribed</div>
       )}
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+      <div className="flex flex-wrap gap-2">
         {!subscription && (
-          <Button type="button" onClick={subscribe} disabled={!isPushAvailable} className="w-full sm:w-auto">
+          <Button type="button" onClick={subscribe} disabled={!isPushAvailable} className="min-w-[150px] flex-1 sm:flex-none">
             Subscribe
           </Button>
         )}
@@ -262,7 +262,7 @@ export default function PushManager() {
             variant="outline"
             onClick={unsubscribe}
             disabled={!isPushAvailable}
-            className="w-full sm:w-auto"
+            className="min-w-[150px] flex-1 sm:flex-none"
           >
             Unsubscribe
           </Button>
@@ -272,7 +272,7 @@ export default function PushManager() {
           variant="secondary"
           onClick={sendTestWithDelay}
           disabled={!isPushAvailable || !subscription || countdown !== null}
-          className="w-full sm:w-auto"
+          className="min-w-[150px] flex-1 sm:flex-none"
         >
           {countdown !== null ? `Sending in ${countdown}s...` : 'Notification Test (5s)'}
         </Button>
@@ -281,7 +281,7 @@ export default function PushManager() {
           variant="outline"
           onClick={scheduleLogicTest}
           disabled={!isPushAvailable || !subscription}
-          className="w-full sm:w-auto"
+          className="min-w-[150px] flex-1 sm:flex-none"
         >
           Reminder Logic Test (~1m)
         </Button>

@@ -390,6 +390,68 @@ export function Header() {
     return rows.sort((a, b) => a.trigger - b.trigger).slice(0, 12);
   })();
 
+  const triggerShiftedDebugNotifications = async () => {
+    const simulatedNow = Date.now() + debugTimeShiftDays * 24 * 60 * 60 * 1000;
+    const dueRows: Array<{ plate: string; doc: string; expiry: number; lead: number }> = [];
+
+    for (const vehicle of vehicles || []) {
+      const docs = [
+        { name: 'ITP', expiry: vehicle.itpExpiryMillis },
+        { name: 'RCA', expiry: vehicle.rcaExpiryMillis },
+        { name: 'Vignette', expiry: vehicle.vignetteExpiryMillis },
+      ];
+      for (const doc of docs) {
+        if (!doc.expiry) continue;
+        for (const lead of defaultReminderSettings.leadDays) {
+          const trigger = calculateTriggerDate(
+            doc.expiry,
+            lead,
+            defaultReminderSettings.notifyHour,
+            defaultReminderSettings.notifyMinute
+          ).getTime();
+          const recentlyDue = trigger <= simulatedNow && trigger >= simulatedNow - 24 * 60 * 60 * 1000;
+          if (!recentlyDue) continue;
+          dueRows.push({ plate: vehicle.plate, doc: doc.name, expiry: doc.expiry, lead });
+        }
+      }
+    }
+
+    if (dueRows.length === 0) {
+      toast.message('No reminders are due in the simulated window.');
+      return;
+    }
+
+    if (typeof Notification === 'undefined') {
+      toast.error('Notifications are not supported in this browser.');
+      return;
+    }
+
+    if (Notification.permission !== 'granted') {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        toast.error('Notification permission was not granted.');
+        return;
+      }
+    }
+
+    const rowsToSend = dueRows.slice(0, 5);
+    const reg = typeof navigator !== 'undefined' && 'serviceWorker' in navigator
+      ? await navigator.serviceWorker.getRegistration()
+      : null;
+
+    for (const row of rowsToSend) {
+      const title = `Debug Reminder: ${row.doc}`;
+      const body = `${row.plate} expires on ${new Date(row.expiry).toLocaleDateString()} (${row.lead}d lead)`;
+      if (reg) {
+        await reg.showNotification(title, { body, icon: '/favicon.ico' });
+      } else {
+        new Notification(title, { body });
+      }
+    }
+
+    toast.success(`Sent ${rowsToSend.length} debug notification(s).`);
+  };
+
   const syncChip =
     syncStatus.state === 'syncing'
       ? { label: 'Syncing', dotClass: 'bg-blue-500' }
@@ -852,24 +914,36 @@ export function Header() {
                 Simulated now: {new Date(Date.now() + debugTimeShiftDays * 24 * 60 * 60 * 1000).toLocaleString()}
               </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"
                 onClick={async () => {
                   const result = await flushQueuedRequests();
                   setQueuedCount(getQueuedRequestCount());
-                  toast(`Flush complete: ${result.sent} sent, ${result.failed} failed`);
+                  toast(`Queue flush: ${result.sent} sent, ${result.failed} failed`);
                 }}
+                className="min-w-[160px] flex-1 sm:flex-none"
               >
-                Flush Queue
+                Send Queued Requests
               </Button>
               <Button
                 variant="outline"
                 onClick={() => setDebugPushToolsOpen((value) => !value)}
+                className="min-w-[160px] flex-1 sm:flex-none"
               >
                 {debugPushToolsOpen ? 'Hide Notification Test' : 'Notification Test'}
               </Button>
+              <Button
+                variant="outline"
+                onClick={triggerShiftedDebugNotifications}
+                className="min-w-[160px] flex-1 sm:flex-none"
+              >
+                Run Shifted Notifications
+              </Button>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Send Queued Requests retries reminder network calls saved while offline.
+            </p>
             {debugPushToolsOpen && (
               <div className="rounded border p-2">
                 <PushManager />
