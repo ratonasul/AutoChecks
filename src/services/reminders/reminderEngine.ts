@@ -12,6 +12,13 @@ export const defaultReminderSettings: ReminderSettings = {
   notifyMinute: 0,
 };
 
+function buildDailyHoursForLeadDay(leadDays: number, baseHour: number): number[] {
+  if (leadDays === 30) return [baseHour];
+  if (leadDays >= 8) return [baseHour];
+  if (leadDays >= 4) return [baseHour, Math.min(20, baseHour + 9)];
+  return [baseHour, Math.min(20, baseHour + 5), Math.min(21, baseHour + 10)];
+}
+
 export function calculateTriggerDate(
   expiryMillis: number,
   leadDays: number,
@@ -48,23 +55,29 @@ export function scheduleExpiryReminders({
   ).sort((a, b) => b - a);
 
   for (const leadDays of uniqueLeadDays) {
-    const triggerDate = calculateTriggerDate(
-      expiryMillis,
-      leadDays,
-      settings.notifyHour,
-      settings.notifyMinute
+    const notifyHours = Array.from(new Set(buildDailyHoursForLeadDay(leadDays, settings.notifyHour))).sort(
+      (a, b) => a - b
     );
 
-    if (triggerDate.getTime() <= now) {
-      console.info(
-        `[reminders] Skip scheduling ${notificationIdPrefix}-${leadDays}d; trigger is in the past: ${triggerDate.toISOString()}`
+    for (const notifyHour of notifyHours) {
+      const triggerDate = calculateTriggerDate(
+        expiryMillis,
+        leadDays,
+        notifyHour,
+        settings.notifyMinute
       );
-      continue;
-    }
 
-    const notificationId = `${notificationIdPrefix}-${leadDays}d`;
-    scheduleAt(notificationId, triggerDate.getTime(), leadDays);
-    scheduledIds.push(notificationId);
+      if (triggerDate.getTime() <= now) {
+        console.info(
+          `[reminders] Skip scheduling ${notificationIdPrefix}-${leadDays}d-${String(notifyHour).padStart(2, '0')}:${String(settings.notifyMinute).padStart(2, '0')}; trigger is in the past: ${triggerDate.toISOString()}`
+        );
+        continue;
+      }
+
+      const notificationId = `${notificationIdPrefix}-${leadDays}d-${String(notifyHour).padStart(2, '0')}:${String(settings.notifyMinute).padStart(2, '0')}`;
+      scheduleAt(notificationId, triggerDate.getTime(), leadDays);
+      scheduledIds.push(notificationId);
+    }
   }
 
   return scheduledIds;
