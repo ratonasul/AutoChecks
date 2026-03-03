@@ -24,6 +24,7 @@ import { db } from '@/lib/db';
 import { UsernameModal } from '@/components/UsernameModal';
 import { calculateReminderState, calculateTriggerDate, defaultReminderSettings } from '@/services/reminders/reminderEngine';
 import { getReminderSnoozeKey, isReminderSnoozed, snoozeReminder } from '@/services/reminders/reminderSnooze';
+import { scheduleRuntimeExpiryReminders } from '@/services/reminders/runtimeReminderScheduler';
 import { defaultFeatureFlags } from '@/lib/featureFlags';
 import { getCompanyDisplayName, getSettings, upsertSettings } from '@/lib/settings';
 import { flushQueuedRequests, getQueuedRequestCount } from '@/lib/networkQueue';
@@ -205,6 +206,31 @@ export function Header() {
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
+
+  useEffect(() => {
+    const scheduleAll = async () => {
+      if (!vehicles || vehicles.length === 0) return;
+      for (const vehicle of vehicles) {
+        if (!vehicle.id) continue;
+        const docs = [
+          { key: 'ITP', expiry: vehicle.itpExpiryMillis },
+          { key: 'RCA', expiry: vehicle.rcaExpiryMillis },
+          { key: 'VIGNETTE', expiry: vehicle.vignetteExpiryMillis },
+        ] as const;
+
+        for (const doc of docs) {
+          if (!doc.expiry) continue;
+          await scheduleRuntimeExpiryReminders({
+            expiryMillis: doc.expiry,
+            notificationIdPrefix: `vehicle-${vehicle.id}-${doc.key.toLowerCase()}`,
+          });
+        }
+      }
+    };
+    scheduleAll().catch((error) => {
+      console.error('Failed to schedule runtime reminders', error);
+    });
+  }, [vehicles]);
 
   const handleSaveUsername = async (newUsername: string) => {
     try {

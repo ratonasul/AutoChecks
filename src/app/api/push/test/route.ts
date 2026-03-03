@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import webpush from 'web-push';
-import { assertOwnerRequest } from '@/lib/serverOwnerGuard';
+import { assertAuthenticatedRequest } from '@/lib/serverOwnerGuard';
 
 export async function POST(request: Request) {
   try {
-    const denied = await assertOwnerRequest(request);
+    const denied = await assertAuthenticatedRequest(request);
     if (denied) return denied;
 
     const body = await request.json();

@@ -7,7 +7,7 @@ export type ReminderSettings = {
 };
 
 export const defaultReminderSettings: ReminderSettings = {
-  leadDays: [30, 7, 1],
+  leadDays: [30, ...Array.from({ length: 15 }, (_, index) => 15 - index)],
   notifyHour: 9,
   notifyMinute: 0,
 };

@@ -5,6 +5,7 @@ import {
   type ReminderSettings,
 } from '@/services/reminders/reminderEngine';
 import { enqueueRequest } from '@/lib/networkQueue';
+import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabaseClient';
 
 const MAX_TIMEOUT_MS = 2_147_483_647;
 const scheduledTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
@@ -64,6 +65,19 @@ export async function getReminderSettings(): Promise<ReminderSettings> {
 }
 
 async function sendScheduledPush(subscription: PushSubscription, notificationId: string, leadDays: number) {
+  let authHeaders: Record<string, string> = {};
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = getSupabaseClient();
+      const { data } = await supabase.auth.getSession();
+      if (data.session?.access_token) {
+        authHeaders = { Authorization: `Bearer ${data.session.access_token}` };
+      }
+    } catch (error) {
+      console.warn('Failed to get auth token for scheduled push', error);
+    }
+  }
+
   const payload = JSON.stringify({
     subscription,
     reminder: {
@@ -75,7 +89,7 @@ async function sendScheduledPush(subscription: PushSubscription, notificationId:
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     enqueueRequest('/api/push/test', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
       body: payload,
     });
     return;
@@ -83,7 +97,7 @@ async function sendScheduledPush(subscription: PushSubscription, notificationId:
 
   const response = await fetch('/api/push/test', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: payload,
   });
 
